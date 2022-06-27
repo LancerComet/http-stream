@@ -1,0 +1,21 @@
+{
+  "name": "@lancercomet/http-stream",
+  "version": "1.0.0",
+  "description": "A xhr based stream, using http 206 to fetch the bytes.",
+  "main": "index.js",
+  "scripts": {
+    "dev": "tsc --watch",
+    "build": "tsc",
+    "serve": "http-server . -p 8080 -c-1"
+  },
+  "keywords": [],
+  "author": {
+    "name": "LancerComet",
+    "email": "chw644@hotmail.com"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "http-server": "^14.1.1",
+    "typescript": "^4.7.4"
+  }
+}
