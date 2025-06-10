@@ -9,10 +9,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 class HttpStream {
-    constructor(url) {
-        this.url = '';
-        this.url = url;
-    }
     readAsync(position, length) {
         return fetch(this.url, {
             method: 'GET',
@@ -34,6 +30,10 @@ class HttpStream {
             }
             return 0;
         });
+    }
+    constructor(url) {
+        this.url = '';
+        this.url = url;
     }
 }
 const sequenceEqual = (a1, a2) => {
@@ -102,10 +102,10 @@ const detectJpg = (jpgUrl) => __awaiter(void 0, void 0, void 0, function* () {
     console.log('Total file bytes:', totalLength);
     console.log('');
 });
-// Testing codes below.
-// Host a http server and make sure the '/public' is accessable.
-// We are going to read a png image and a jpg image then detect their pixel size without downloaing the whole files.
-// For a jpg/png file, it is enough to download the first 30 bytes to detect the pixel size.
+// Testing code below.
+// Host an HTTP server and make sure '/public' is accessible.
+// We will read a PNG image and a JPEG image and detect their pixel sizes without downloading the entire files.
+// For a JPEG/PNG file, downloading the first 30 bytes is sufficient to detect the pixel size.
 Promise.all([
     detectPng('/public/yuki.png'),
     detectJpg('/public/shubham-dhage-unsplash.jpg')
