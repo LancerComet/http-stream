@@ -6,11 +6,25 @@
   <body>
     <h1>HttpStream</h1>
     <div>
-      <p>In this example, what we are basiclly doing is:</p>
+      <p>HttpStream is now a full-featured Stream implementation that supports the Web Streams API!</p>
+      
+      <h2>Original Demo</h2>
+      <p>In this example, what we are basically doing is:</p>
       <ul>
         <li>Create two `HttpStream`s from both a png image and a jpg image.</li>
-        <li>Read thier pixel size without downloading them completely.</li>
+        <li>Read their pixel size without downloading them completely.</li>
       </ul>
+      
+      <h2>New Stream API Features</h2>
+      <p>HttpStream now supports:</p>
+      <ul>
+        <li><strong>ReadableStream interface</strong> - Standard Web Streams API compatibility</li>
+        <li><strong>Chunked reading</strong> - Read files in configurable chunks with backpressure support</li>
+        <li><strong>Stream methods</strong> - getReader(), read(), pipeTo(), pipeThrough()</li>
+        <li><strong>Error handling</strong> - Proper HTTP error handling and stream error propagation</li>
+        <li><strong>Backward compatibility</strong> - Original readAsync() and getLength() methods still work</li>
+      </ul>
+      
       <p>Please open the console to see what is happening, and remember to check the size of downloaded content in "Network" panel.</p>
     </div>
     <script src="index.js"></script>
