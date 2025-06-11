@@ -1,5 +1,11 @@
+interface HttpStreamOptions {
+  chunkSize?: number
+}
+
 class HttpStream {
   readonly url: string = ''
+  private _length: number | null = null
+  private readonly chunkSize: number
 
   readAsync (position: number, length: number): Promise<ArrayBuffer> {
     return fetch(this.url, {
@@ -8,23 +14,128 @@ class HttpStream {
         Range: `bytes=${position}-${position + length - 1}`
       },
       keepalive: true
-    }).then(item => item.arrayBuffer())
+    }).then(item => {
+      if (!item.ok) {
+        throw new Error(`HTTP ${item.status}: ${item.statusText}`)
+      }
+      return item.arrayBuffer()
+    })
   }
 
   async getLength (): Promise<number> {
+    if (this._length !== null) {
+      return this._length
+    }
+    
     const response = await fetch(this.url, {
       method: 'HEAD'
     })
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+    
     const headers = response.headers
     const length = headers.get('Content-Length')
     if (length) {
-      return parseInt(length)
+      this._length = parseInt(length)
+      return this._length
     }
-    return 0
+    
+    throw new Error('Content-Length header not available')
   }
 
-  constructor (url: string) {
+  /**
+   * Creates a ReadableStream that reads the HTTP resource in chunks
+   */
+  getReadableStream (): ReadableStream<Uint8Array> {
+    let position = 0
+    let totalLength: number | null = null
+
+    return new ReadableStream<Uint8Array>({
+      start: async (controller) => {
+        try {
+          totalLength = await this.getLength()
+        } catch (error) {
+          controller.error(error)
+        }
+      },
+
+      pull: async (controller) => {
+        try {
+          if (totalLength === null) {
+            controller.close()
+            return
+          }
+
+          if (position >= totalLength) {
+            controller.close()
+            return
+          }
+
+          const remainingBytes = totalLength - position
+          const bytesToRead = Math.min(this.chunkSize, remainingBytes)
+          
+          const arrayBuffer = await this.readAsync(position, bytesToRead)
+          const chunk = new Uint8Array(arrayBuffer)
+          
+          controller.enqueue(chunk)
+          position += bytesToRead
+        } catch (error) {
+          controller.error(error)
+        }
+      },
+
+      cancel: () => {
+        // Cleanup if needed
+      }
+    })
+  }
+
+  /**
+   * Returns a ReadableStreamDefaultReader for reading the stream
+   */
+  getReader (): ReadableStreamDefaultReader<Uint8Array> {
+    return this.getReadableStream().getReader()
+  }
+
+  /**
+   * Reads a specific chunk from the stream
+   */
+  async read (position?: number, length?: number): Promise<{ value: Uint8Array | undefined, done: boolean }> {
+    if (position !== undefined && length !== undefined) {
+      try {
+        const arrayBuffer = await this.readAsync(position, length)
+        return { value: new Uint8Array(arrayBuffer), done: false }
+      } catch (error) {
+        return { value: undefined, done: true }
+      }
+    }
+
+    // If no position/length specified, use the reader
+    const reader = this.getReader()
+    const result = await reader.read()
+    reader.releaseLock()
+    return { value: result.value, done: result.done }
+  }
+
+  /**
+   * Pipes the HttpStream to a WritableStream
+   */
+  async pipeTo (destination: WritableStream<Uint8Array>): Promise<void> {
+    return this.getReadableStream().pipeTo(destination)
+  }
+
+  /**
+   * Creates a new stream by applying a transform
+   */
+  pipeThrough<T> (transform: { writable: WritableStream<Uint8Array>, readable: ReadableStream<T> }): ReadableStream<T> {
+    return this.getReadableStream().pipeThrough(transform)
+  }
+
+  constructor (url: string, options: HttpStreamOptions = {}) {
     this.url = url
+    this.chunkSize = options.chunkSize || 8192 // 8KB default chunk size
   }
 }
 
@@ -114,6 +225,79 @@ const detectJpg = async (jpgUrl: string) => {
   console.log('')
 }
 
+// Demonstration of new Stream API features
+const demonstrateStreamAPI = async () => {
+  console.log('=== HttpStream API Demonstration ===\n')
+  
+  const streamUrl = '/public/yuki.png'
+  const httpStream = new HttpStream(streamUrl, { chunkSize: 1024 }) // 1KB chunks
+  
+  console.log('1. Reading file length:')
+  const length = await httpStream.getLength()
+  console.log(`   File size: ${length} bytes\n`)
+  
+  console.log('2. Reading specific range with readAsync:')
+  const headerBytes = await httpStream.readAsync(0, 8)
+  console.log(`   First 8 bytes: [${Array.from(new Uint8Array(headerBytes)).join(', ')}]\n`)
+  
+  console.log('3. Using ReadableStream interface:')
+  const reader = httpStream.getReader()
+  let bytesRead = 0
+  let chunksRead = 0
+  
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      
+      if (value) {
+        bytesRead += value.length
+        chunksRead++
+        
+        if (chunksRead <= 3) { // Show first 3 chunks
+          console.log(`   Chunk ${chunksRead}: ${value.length} bytes`)
+        }
+      }
+    }
+    console.log(`   Total: Read ${bytesRead} bytes in ${chunksRead} chunks\n`)
+  } finally {
+    reader.releaseLock()
+  }
+  
+  console.log('4. Using read() method:')
+  const { value, done } = await httpStream.read(100, 50) // Read 50 bytes from position 100
+  if (!done && value) {
+    console.log(`   Read 50 bytes from position 100: ${value.length} bytes received\n`)
+  }
+  
+  console.log('5. Streaming to array (simulated):')
+  const chunks: Uint8Array[] = []
+  const readableStream = httpStream.getReadableStream()
+  const streamReader = readableStream.getReader()
+  
+  let totalStreamBytes = 0
+  let streamChunks = 0
+  
+  try {
+    while (true) {
+      const { done, value } = await streamReader.read()
+      if (done) break
+      
+      if (value) {
+        chunks.push(value)
+        totalStreamBytes += value.length
+        streamChunks++
+        
+        // Only read first few chunks for demo
+        if (streamChunks >= 5) break
+      }
+    }
+    console.log(`   Collected ${streamChunks} chunks, ${totalStreamBytes} total bytes\n`)
+  } finally {
+    streamReader.releaseLock()
+  }
+}
+
 // Testing code below.
 // Host an HTTP server and make sure '/public' is accessible.
 // We will read a PNG image and a JPEG image and detect their pixel sizes without downloading the entire files.
@@ -121,4 +305,21 @@ const detectJpg = async (jpgUrl: string) => {
 Promise.all([
   detectPng('/public/yuki.png'),
   detectJpg('/public/shubham-dhage-unsplash.jpg')
-])
+]).then(() => {
+  // Demonstrate the new Stream API features
+  return demonstrateStreamAPI()
+}).then(() => {
+  console.log('=== All demonstrations completed ===')
+}).catch((error) => {
+  console.error('Error during demonstration:', error)
+})
+
+// Export for module use
+if (typeof globalThis !== 'undefined' && (globalThis as any).module?.exports) {
+  (globalThis as any).module.exports = { HttpStream }
+}
+
+// Export for ES modules and browser globals
+if (typeof window !== 'undefined') {
+  (window as any).HttpStream = HttpStream
+}
